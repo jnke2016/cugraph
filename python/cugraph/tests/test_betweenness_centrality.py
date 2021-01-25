@@ -17,6 +17,8 @@ import pytest
 
 import cugraph
 from cugraph.tests import utils
+from cugraph.tests.fixtures import get_cu_nx_graph_datasets_small
+from cugraph.tests.fixtures import get_cu_nx_graph_datasets_unrenumbered
 import random
 import numpy as np
 import cudf
@@ -301,32 +303,6 @@ def prepare_test():
 # =============================================================================
 # Pytest Fixtures
 # =============================================================================
-DIRECTED = [pytest.param(d) for d in DIRECTED_GRAPH_OPTIONS]
-DATASETS_SMALL = [pytest.param(d) for d in utils.DATASETS_SMALL]
-DATASETS_UNRENUMBERED = [pytest.param(d) for d in utils.DATASETS_UNRENUMBERED]
-WEIGHTED_GRAPH_OPTIONS = [pytest.param(w) for w in WEIGHTED_GRAPH_OPTIONS]
-
-
-small_graph_fixture_params = utils.genFixtureParamsProduct(
-    (DATASETS_SMALL, "grph"),
-    (DIRECTED, "dirctd"),
-    (WEIGHTED_GRAPH_OPTIONS, "wgtd_gph_opts"))
-
-unrenumbered_graph_fixture_params = utils.genFixtureParamsProduct(
-    (DATASETS_UNRENUMBERED, "grph"),
-    (DIRECTED, "dirctd"),
-    (WEIGHTED_GRAPH_OPTIONS, "wgtd_gph_opts"))
-
-
-@pytest.fixture(scope="module", params=small_graph_fixture_params)
-def get_cu_nx_graph_datasets_small(request):
-    return utils.build_cu_and_nx_graphs(*request.param)
-
-
-@pytest.fixture(scope="module", params=unrenumbered_graph_fixture_params)
-def get_cu_nx_graph_datasets_unrenumbered(request):
-    return utils.build_cu_and_nx_graphs(*request.param)
-
 
 # =============================================================================
 # Tests
@@ -357,6 +333,7 @@ def test_betweenness_centrality(
         result_dtype=result_dtype,
     )
     compare_scores(sorted_df, first_key="cu_bc", second_key="ref_bc")
+
 
 
 @pytest.mark.parametrize("subset_size", [None])
@@ -493,17 +470,14 @@ def test_betweenness_invalid_dtype(
         compare_scores(sorted_df, first_key="cu_bc", second_key="ref_bc")
 
 
-@pytest.mark.parametrize("graph_file", utils.DATASETS_SMALL)
-@pytest.mark.parametrize("directed", DIRECTED_GRAPH_OPTIONS)
-@pytest.mark.parametrize("edgevals", WEIGHTED_GRAPH_OPTIONS)
+
 def test_betweenness_centrality_nx(
-        graph_file,
-        directed,
-        edgevals
+        get_cu_nx_graph_datasets_small,
+        
 ):
     prepare_test()
 
-    Gnx = utils.generate_nx_graph_from_file(graph_file, directed, edgevals)
+    _, Gnx = get_cu_nx_graph_datasets_small
 
     nx_bc = nx.betweenness_centrality(Gnx)
     cu_bc = cugraph.betweenness_centrality(Gnx)
