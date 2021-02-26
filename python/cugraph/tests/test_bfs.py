@@ -153,7 +153,7 @@ def compare_bfs(benchmark_callable, G, nx_values, start_vertex,
     """
     Genereate both cugraph and reference bfs traversal.
     """
-    if isinstance(start_vertex, int):
+    if isinstance(start_vertex, str):
         result = benchmark_callable(cugraph.bfs_edges, G, start_vertex,
                                     return_sp_counter=return_sp_counter)
         cugraph_df = convert_output_to_cudf(G, result)
@@ -334,7 +334,7 @@ def get_nx_results_and_params(seed, use_spc, dataset, directed, Gnx):
     Helper for fixtures returning Nx results and params.
     """
     random.seed(seed)
-    start_vertex = random.sample(Gnx.nodes(), 1)[0]
+    start_vertex = random.sample(Gnx.nodes(), 1)[0] 
 
     if use_spc:
         _, _, nx_sp_counter = \

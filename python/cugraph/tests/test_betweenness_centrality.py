@@ -119,7 +119,10 @@ def calc_betweenness_centrality(
     """
     G = None
     Gnx = None
-
+    print("********************************************")
+    print(type(graph_obj_tuple))
+    print("********************************************")
+    #G, Gnx = request.getfixturevalue(graph_obj_tuple)
     G, Gnx = graph_obj_tuple
 
     assert G is not None and Gnx is not None
@@ -304,6 +307,8 @@ def prepare_test():
 DIRECTED = [pytest.param(d) for d in DIRECTED_GRAPH_OPTIONS]
 DATASETS_SMALL = [pytest.param(d) for d in utils.DATASETS_SMALL]
 DATASETS_UNRENUMBERED = [pytest.param(d) for d in utils.DATASETS_UNRENUMBERED]
+DATASETS_SELF_LOOP = [pytest.param(d) for d in utils.DATASETS_SELF_LOOP] #just added
+DATASETS_STR = [pytest.param(d) for d in utils.DATASETS_STR]
 WEIGHTED_GRAPH_OPTIONS = [pytest.param(w) for w in WEIGHTED_GRAPH_OPTIONS]
 
 
@@ -317,6 +322,15 @@ unrenumbered_graph_fixture_params = utils.genFixtureParamsProduct(
     (DIRECTED, "dirctd"),
     (WEIGHTED_GRAPH_OPTIONS, "wgtd_gph_opts"))
 
+#Just added
+self_loop_graph_fixture_params = utils.genFixtureParamsProduct(
+    (DATASETS_SELF_LOOP, "grph"),
+    (DIRECTED, "dirctd"))
+
+str_vertices_graph_fixture_params = utils.genFixtureParamsProduct(
+    (DATASETS_STR, "grph"),
+    (DIRECTED, "dirctd"))
+
 
 @pytest.fixture(scope="module", params=small_graph_fixture_params)
 def get_cu_nx_graph_datasets_small(request):
@@ -327,10 +341,23 @@ def get_cu_nx_graph_datasets_small(request):
 def get_cu_nx_graph_datasets_unrenumbered(request):
     return utils.build_cu_and_nx_graphs(*request.param)
 
+@pytest.fixture(scope="module", params=self_loop_graph_fixture_params)
+def get_cu_nx_graph_datasets_self_loop(request):
+    return utils.build_cu_and_nx_graphs(*request.param)
+
+@pytest.fixture(scope="module", params=str_vertices_graph_fixture_params)
+def get_cu_nx_graph_datasets_str_vertices(request):
+    return utils.build_cu_and_nx_graphs(*request.param)
+
 
 # =============================================================================
 # Tests
 # =============================================================================
+@pytest.mark.parametrize("get_cu_nx_graph_datasets",[
+   pytest.lazy_fixture ("get_cu_nx_graph_datasets_small"),
+   #get_cu_nx_graph_datasets_self_loop,
+   pytest.lazy_fixture ("get_cu_nx_graph_datasets_str_vertices")
+])
 @pytest.mark.parametrize("subset_size", SUBSET_SIZE_OPTIONS)
 @pytest.mark.parametrize("normalized", NORMALIZED_OPTIONS)
 @pytest.mark.parametrize("weight", [None])
@@ -338,7 +365,7 @@ def get_cu_nx_graph_datasets_unrenumbered(request):
 @pytest.mark.parametrize("subset_seed", SUBSET_SEED_OPTIONS)
 @pytest.mark.parametrize("result_dtype", RESULT_DTYPE_OPTIONS)
 def test_betweenness_centrality(
-    get_cu_nx_graph_datasets_small,
+    get_cu_nx_graph_datasets,
     subset_size,
     normalized,
     weight,
@@ -348,7 +375,7 @@ def test_betweenness_centrality(
 ):
     prepare_test()
     sorted_df = calc_betweenness_centrality(
-        get_cu_nx_graph_datasets_small,
+        get_cu_nx_graph_datasets,
         normalized=normalized,
         k=subset_size,
         weight=weight,
@@ -359,6 +386,12 @@ def test_betweenness_centrality(
     compare_scores(sorted_df, first_key="cu_bc", second_key="ref_bc")
 
 
+
+@pytest.mark.parametrize("get_cu_nx_graph_datasets", [pytest.lazy_fixture ("get_cu_nx_graph_datasets_small"),
+   #get_cu_nx_graph_datasets_self_loop,
+   pytest.lazy_fixture ("get_cu_nx_graph_datasets_str_vertices")
+   ]
+)
 @pytest.mark.parametrize("subset_size", [None])
 @pytest.mark.parametrize("normalized", NORMALIZED_OPTIONS)
 @pytest.mark.parametrize("weight", [None])
@@ -367,7 +400,7 @@ def test_betweenness_centrality(
 @pytest.mark.parametrize("result_dtype", RESULT_DTYPE_OPTIONS)
 @pytest.mark.parametrize("use_k_full", [True])
 def test_betweenness_centrality_k_full(
-    get_cu_nx_graph_datasets_small,
+    get_cu_nx_graph_datasets,
     subset_size,
     normalized,
     weight,
@@ -375,12 +408,13 @@ def test_betweenness_centrality_k_full(
     subset_seed,
     result_dtype,
     use_k_full,
+    request
 ):
     """Tests full betweenness centrality by using k = G.number_of_vertices()
     instead of k=None, checks that k scales properly"""
-    prepare_test()
+    prepare_test(),
     sorted_df = calc_betweenness_centrality(
-        get_cu_nx_graph_datasets_small,
+        get_cu_nx_graph_datasets,
         normalized=normalized,
         k=subset_size,
         weight=weight,
@@ -396,6 +430,13 @@ def test_betweenness_centrality_k_full(
 #       the function operating the comparison inside is first proceeding
 #       to a random sampling over the number of vertices (thus direct offsets)
 #       in the graph structure instead of actual vertices identifiers
+
+
+@pytest.mark.parametrize("get_cu_nx_graph_datasets",[
+   pytest.lazy_fixture("get_cu_nx_graph_datasets_unrenumbered"),
+   #get_cu_nx_graph_datasets_self_loop,
+   pytest.lazy_fixture("get_cu_nx_graph_datasets_str_vertices")
+])
 @pytest.mark.parametrize("subset_size", SUBSET_SIZE_OPTIONS)
 @pytest.mark.parametrize("normalized", NORMALIZED_OPTIONS)
 @pytest.mark.parametrize("weight", [None])
@@ -403,7 +444,7 @@ def test_betweenness_centrality_k_full(
 @pytest.mark.parametrize("subset_seed", [None])
 @pytest.mark.parametrize("result_dtype", RESULT_DTYPE_OPTIONS)
 def test_betweenness_centrality_fixed_sample(
-    get_cu_nx_graph_datasets_unrenumbered,
+    get_cu_nx_graph_datasets,
     subset_size,
     normalized,
     weight,
@@ -417,7 +458,7 @@ def test_betweenness_centrality_fixed_sample(
     """
     prepare_test()
     sorted_df = calc_betweenness_centrality(
-        get_cu_nx_graph_datasets_unrenumbered,
+        get_cu_nx_graph_datasets,
         k=subset_size,
         normalized=normalized,
         weight=weight,
@@ -427,7 +468,11 @@ def test_betweenness_centrality_fixed_sample(
     )
     compare_scores(sorted_df, first_key="cu_bc", second_key="ref_bc")
 
-
+@pytest.mark.parametrize("get_cu_nx_graph_datasets",[
+   pytest.lazy_fixture("get_cu_nx_graph_datasets_small"),
+   #get_cu_nx_graph_datasets_self_loop,
+   pytest.lazy_fixture("get_cu_nx_graph_datasets_str_vertices")
+])
 @pytest.mark.parametrize("subset_size", SUBSET_SIZE_OPTIONS)
 @pytest.mark.parametrize("normalized", NORMALIZED_OPTIONS)
 @pytest.mark.parametrize("weight", [[]])
@@ -435,7 +480,7 @@ def test_betweenness_centrality_fixed_sample(
 @pytest.mark.parametrize("subset_seed", SUBSET_SEED_OPTIONS)
 @pytest.mark.parametrize("result_dtype", RESULT_DTYPE_OPTIONS)
 def test_betweenness_centrality_weight_except(
-    get_cu_nx_graph_datasets_small,
+    get_cu_nx_graph_datasets,
     subset_size,
     normalized,
     weight,
@@ -451,7 +496,7 @@ def test_betweenness_centrality_weight_except(
     prepare_test()
     with pytest.raises(NotImplementedError):
         sorted_df = calc_betweenness_centrality(
-            get_cu_nx_graph_datasets_small,
+            get_cu_nx_graph_datasets,
             k=subset_size,
             normalized=normalized,
             weight=weight,
@@ -461,7 +506,11 @@ def test_betweenness_centrality_weight_except(
         )
         compare_scores(sorted_df, first_key="cu_bc", second_key="ref_bc")
 
-
+@pytest.mark.parametrize("get_cu_nx_graph_datasets",[
+   pytest.lazy_fixture("get_cu_nx_graph_datasets_small"),
+   #get_cu_nx_graph_datasets_self_loop,
+   pytest.lazy_fixture("get_cu_nx_graph_datasets_str_vertices")
+])
 @pytest.mark.parametrize("normalized", NORMALIZED_OPTIONS)
 @pytest.mark.parametrize("subset_size", SUBSET_SIZE_OPTIONS)
 @pytest.mark.parametrize("weight", [None])
@@ -469,7 +518,7 @@ def test_betweenness_centrality_weight_except(
 @pytest.mark.parametrize("subset_seed", SUBSET_SEED_OPTIONS)
 @pytest.mark.parametrize("result_dtype", [str])
 def test_betweenness_invalid_dtype(
-    get_cu_nx_graph_datasets_small,
+    get_cu_nx_graph_datasets,
     subset_size,
     normalized,
     weight,
@@ -482,7 +531,7 @@ def test_betweenness_invalid_dtype(
     prepare_test()
     with pytest.raises(TypeError):
         sorted_df = calc_betweenness_centrality(
-            get_cu_nx_graph_datasets_small,
+            get_cu_nx_graph_datasets,
             k=subset_size,
             normalized=normalized,
             weight=weight,
@@ -493,17 +542,17 @@ def test_betweenness_invalid_dtype(
         compare_scores(sorted_df, first_key="cu_bc", second_key="ref_bc")
 
 
-@pytest.mark.parametrize("graph_file", utils.DATASETS_SMALL)
-@pytest.mark.parametrize("directed", DIRECTED_GRAPH_OPTIONS)
-@pytest.mark.parametrize("edgevals", WEIGHTED_GRAPH_OPTIONS)
+@pytest.mark.parametrize("get_cu_nx_graph_datasets",[
+   pytest.lazy_fixture("get_cu_nx_graph_datasets_small"),
+   #get_cu_nx_graph_datasets_self_loop,
+   pytest.lazy_fixture("get_cu_nx_graph_datasets_str_vertices")
+])
 def test_betweenness_centrality_nx(
-        graph_file,
-        directed,
-        edgevals
+    get_cu_nx_graph_datasets     
 ):
     prepare_test()
 
-    Gnx = utils.generate_nx_graph_from_file(graph_file, directed, edgevals)
+    _, Gnx = get_cu_nx_graph_datasets
 
     nx_bc = nx.betweenness_centrality(Gnx)
     cu_bc = cugraph.betweenness_centrality(Gnx)
