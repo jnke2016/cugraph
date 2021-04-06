@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,8 @@
 #include <matrix_partition_device.cuh>
 #include <patterns/edge_op_utils.cuh>
 #include <patterns/reduce_op.cuh>
-#include <utilities/comm_utils.cuh>
+#include <utilities/dataframe_buffer.cuh>
+#include <utilities/device_comm.cuh>
 #include <utilities/error.hpp>
 
 #include <raft/cudart_utils.h>
@@ -361,34 +362,21 @@ void copy_v_transform_reduce_nbr(raft::handle_t const& handle,
 
   static_assert(is_arithmetic_or_thrust_tuple_of_arithmetic<T>::value);
 
-  auto loop_count = size_t{1};
-  if (GraphViewType::is_multi_gpu) {
-    auto& row_comm           = handle.get_subcomm(cugraph::partition_2d::key_naming_t().row_name());
-    auto const row_comm_size = row_comm.get_size();
-    loop_count               = graph_view.is_hypergraph_partitioned()
-                   ? graph_view.get_number_of_local_adj_matrix_partitions()
-                   : static_cast<size_t>(row_comm_size);
-  }
-  auto comm_rank = handle.comms_initialized() ? handle.get_comms().get_rank() : int{0};
-
   auto minor_tmp_buffer_size =
     (GraphViewType::is_multi_gpu && (in != GraphViewType::is_adj_matrix_transposed))
       ? GraphViewType::is_adj_matrix_transposed
           ? graph_view.get_number_of_local_adj_matrix_partition_rows()
           : graph_view.get_number_of_local_adj_matrix_partition_cols()
       : vertex_t{0};
-  auto minor_tmp_buffer   = allocate_comm_buffer<T>(minor_tmp_buffer_size, handle.get_stream());
-  auto minor_buffer_first = get_comm_buffer_begin<T>(minor_tmp_buffer);
+  auto minor_tmp_buffer = allocate_dataframe_buffer<T>(minor_tmp_buffer_size, handle.get_stream());
+  auto minor_buffer_first = get_dataframe_buffer_begin<T>(minor_tmp_buffer);
 
   if (in != GraphViewType::is_adj_matrix_transposed) {
     auto minor_init = init;
     if (GraphViewType::is_multi_gpu) {
       auto& row_comm = handle.get_subcomm(cugraph::partition_2d::key_naming_t().row_name());
       auto const row_comm_rank = row_comm.get_rank();
-      auto& col_comm = handle.get_subcomm(cugraph::partition_2d::key_naming_t().col_name());
-      auto const col_comm_rank = col_comm.get_rank();
-      minor_init = graph_view.is_hypergraph_partitioned() ? (row_comm_rank == 0) ? init : T{}
-                                                          : (col_comm_rank == 0) ? init : T{};
+      minor_init               = (row_comm_rank == 0) ? init : T{};
     }
 
     if (GraphViewType::is_multi_gpu) {
@@ -406,36 +394,23 @@ void copy_v_transform_reduce_nbr(raft::handle_t const& handle,
     assert(minor_tmp_buffer_size == 0);
   }
 
-  for (size_t i = 0; i < loop_count; ++i) {
-    matrix_partition_device_t<GraphViewType> matrix_partition(
-      graph_view, (GraphViewType::is_multi_gpu && !graph_view.is_hypergraph_partitioned()) ? 0 : i);
+  for (size_t i = 0; i < graph_view.get_number_of_local_adj_matrix_partitions(); ++i) {
+    matrix_partition_device_t<GraphViewType> matrix_partition(graph_view, i);
 
-    auto major_tmp_buffer_size = vertex_t{0};
-    if (GraphViewType::is_multi_gpu) {
-      auto& row_comm = handle.get_subcomm(cugraph::partition_2d::key_naming_t().row_name());
-      auto const row_comm_size = row_comm.get_size();
-      auto& col_comm = handle.get_subcomm(cugraph::partition_2d::key_naming_t().col_name());
-      auto const col_comm_rank = col_comm.get_rank();
-
-      major_tmp_buffer_size =
-        (in == GraphViewType::is_adj_matrix_transposed)
-          ? graph_view.is_hypergraph_partitioned()
-              ? matrix_partition.get_major_size()
-              : graph_view.get_vertex_partition_size(col_comm_rank * row_comm_size + i)
-          : vertex_t{0};
-    }
-    auto major_tmp_buffer   = allocate_comm_buffer<T>(major_tmp_buffer_size, handle.get_stream());
-    auto major_buffer_first = get_comm_buffer_begin<T>(major_tmp_buffer);
+    auto major_tmp_buffer_size =
+      GraphViewType::is_multi_gpu && (in == GraphViewType::is_adj_matrix_transposed)
+        ? matrix_partition.get_major_size()
+        : vertex_t{0};
+    auto major_tmp_buffer =
+      allocate_dataframe_buffer<T>(major_tmp_buffer_size, handle.get_stream());
+    auto major_buffer_first = get_dataframe_buffer_begin<T>(major_tmp_buffer);
 
     auto major_init = T{};
     if (in == GraphViewType::is_adj_matrix_transposed) {
       if (GraphViewType::is_multi_gpu) {
-        auto& row_comm = handle.get_subcomm(cugraph::partition_2d::key_naming_t().row_name());
-        auto const row_comm_rank = row_comm.get_rank();
         auto& col_comm = handle.get_subcomm(cugraph::partition_2d::key_naming_t().col_name());
         auto const col_comm_rank = col_comm.get_rank();
-        major_init = graph_view.is_hypergraph_partitioned() ? (col_comm_rank == 0) ? init : T{}
-                                                            : (row_comm_rank == 0) ? init : T{};
+        major_init               = (col_comm_rank == 0) ? init : T{};
       } else {
         major_init = init;
       }
@@ -448,8 +423,7 @@ void copy_v_transform_reduce_nbr(raft::handle_t const& handle,
       auto const row_comm_size = row_comm.get_size();
       auto& col_comm = handle.get_subcomm(cugraph::partition_2d::key_naming_t().col_name());
       auto const col_comm_rank = col_comm.get_rank();
-      comm_root_rank = graph_view.is_hypergraph_partitioned() ? i * row_comm_size + row_comm_rank
-                                                              : col_comm_rank * row_comm_size + i;
+      comm_root_rank           = i * row_comm_size + row_comm_rank;
     }
 
     if (graph_view.get_vertex_partition_size(comm_root_rank) > 0) {
@@ -503,32 +477,14 @@ void copy_v_transform_reduce_nbr(raft::handle_t const& handle,
       auto const col_comm_rank = col_comm.get_rank();
       auto const col_comm_size = col_comm.get_size();
 
-      if (graph_view.is_hypergraph_partitioned()) {
-        device_reduce(
-          col_comm,
-          major_buffer_first,
-          vertex_value_output_first,
-          static_cast<size_t>(graph_view.get_vertex_partition_size(i * row_comm_size + i)),
-          raft::comms::op_t::SUM,
-          i,
-          handle.get_stream());
-      } else {
-        device_reduce(row_comm,
-                      major_buffer_first,
-                      vertex_value_output_first,
-                      static_cast<size_t>(
-                        graph_view.get_vertex_partition_size(col_comm_rank * row_comm_size + i)),
-                      raft::comms::op_t::SUM,
-                      i,
-                      handle.get_stream());
-      }
+      device_reduce(col_comm,
+                    major_buffer_first,
+                    vertex_value_output_first,
+                    matrix_partition.get_major_size(),
+                    raft::comms::op_t::SUM,
+                    i,
+                    handle.get_stream());
     }
-
-    CUDA_TRY(cudaStreamSynchronize(
-      handle.get_stream()));  // this is as necessary major_tmp_buffer will become out-of-scope once
-                              // control flow exits this block (FIXME: we can reduce stream
-                              // synchronization if we compute the maximum major_tmp_buffer_size and
-                              // allocate major_tmp_buffer outside the loop)
   }
 
   if (GraphViewType::is_multi_gpu && (in != GraphViewType::is_adj_matrix_transposed)) {
@@ -541,59 +497,19 @@ void copy_v_transform_reduce_nbr(raft::handle_t const& handle,
     auto const col_comm_rank = col_comm.get_rank();
     auto const col_comm_size = col_comm.get_size();
 
-    if (graph_view.is_hypergraph_partitioned()) {
-      CUGRAPH_FAIL("unimplemented.");
-    } else {
-      for (int i = 0; i < col_comm_size; ++i) {
-        auto offset = (graph_view.get_vertex_partition_first(row_comm_rank * col_comm_size + i) -
-                       graph_view.get_vertex_partition_first(row_comm_rank * col_comm_size));
-        auto size   = static_cast<size_t>(
-          graph_view.get_vertex_partition_size(row_comm_rank * col_comm_size + i));
-        device_reduce(col_comm,
-                      minor_buffer_first + offset,
-                      minor_buffer_first + offset,
-                      size,
-                      raft::comms::op_t::SUM,
-                      i,
-                      handle.get_stream());
-      }
-
-      // FIXME: this P2P is unnecessary if we apply the partitioning scheme used with hypergraph
-      // partitioning
-      auto comm_src_rank = (comm_rank % col_comm_size) * row_comm_size + comm_rank / col_comm_size;
-      auto comm_dst_rank = row_comm_rank * col_comm_size + col_comm_rank;
-      // FIXME: this branch may no longer necessary with NCCL backend
-      if (comm_src_rank == comm_rank) {
-        assert(comm_dst_rank == comm_rank);
-        auto offset =
-          graph_view.get_vertex_partition_first(row_comm_rank * col_comm_size + col_comm_rank) -
-          graph_view.get_vertex_partition_first(row_comm_rank * col_comm_size);
-        auto size = static_cast<size_t>(
-          graph_view.get_vertex_partition_size(row_comm_rank * col_comm_size + col_comm_rank));
-        thrust::copy(rmm::exec_policy(handle.get_stream())->on(handle.get_stream()),
-                     minor_buffer_first + offset,
-                     minor_buffer_first + offset + size,
-                     vertex_value_output_first);
-      } else {
-        device_sendrecv<decltype(minor_buffer_first), VertexValueOutputIterator>(
-          comm,
-          minor_buffer_first +
-            (graph_view.get_vertex_partition_first(row_comm_rank * col_comm_size + col_comm_rank) -
-             graph_view.get_vertex_partition_first(row_comm_rank * col_comm_size)),
-          static_cast<size_t>(
-            graph_view.get_vertex_partition_size(row_comm_rank * col_comm_size + col_comm_rank)),
-          comm_dst_rank,
-          vertex_value_output_first,
-          static_cast<size_t>(graph_view.get_vertex_partition_size(comm_rank)),
-          comm_src_rank,
-          handle.get_stream());
-      }
+    for (int i = 0; i < row_comm_size; ++i) {
+      auto offset = (graph_view.get_vertex_partition_first(col_comm_rank * row_comm_size + i) -
+                     graph_view.get_vertex_partition_first(col_comm_rank * row_comm_size));
+      device_reduce(row_comm,
+                    minor_buffer_first + offset,
+                    vertex_value_output_first,
+                    static_cast<size_t>(
+                      graph_view.get_vertex_partition_size(col_comm_rank * row_comm_size + i)),
+                    raft::comms::op_t::SUM,
+                    i,
+                    handle.get_stream());
     }
   }
-
-  CUDA_TRY(cudaStreamSynchronize(
-    handle.get_stream()));  // this is as necessary minor_tmp_buffer will become out-of-scope once
-                            // control flow exits this block
 }
 
 }  // namespace detail
@@ -627,7 +543,7 @@ void copy_v_transform_reduce_nbr(raft::handle_t const& handle,
  * weight), *(@p adj_matrix_row_value_input_first + i), and *(@p adj_matrix_col_value_input_first +
  * j) (where i is in [0, graph_view.get_number_of_local_adj_matrix_partition_rows()) and j is in [0,
  * get_number_of_local_adj_matrix_partition_cols())) and returns a value to be reduced.
- * @param init Initial value to be added to the reduced @e_op return values for each vertex.
+ * @param init Initial value to be added to the reduced @p e_op return values for each vertex.
  * @param vertex_value_output_first Iterator pointing to the vertex property variables for the first
  * (inclusive) vertex (assigned to tihs process in multi-GPU). `vertex_value_output_last`
  * (exclusive) is deduced as @p vertex_value_output_first + @p
@@ -689,7 +605,7 @@ void copy_v_transform_reduce_in_nbr(raft::handle_t const& handle,
  * adj_matrix_col_value_input_first + j) (where i is in [0,
  * graph_view.get_number_of_local_adj_matrix_partition_rows()) and j is in [0,
  * get_number_of_local_adj_matrix_partition_cols())) and returns a value to be reduced.
- * @param init Initial value to be added to the reduced @e_op return values for each vertex.
+ * @param init Initial value to be added to the reduced @p e_op return values for each vertex.
  * @param vertex_value_output_first Iterator pointing to the vertex property variables for the
  * first (inclusive) vertex (assigned to tihs process in multi-GPU). `vertex_value_output_last`
  * (exclusive) is deduced as @p vertex_value_output_first + @p

@@ -1,5 +1,5 @@
 #=============================================================================
-# Copyright (c) 2018-2020, NVIDIA CORPORATION.
+# Copyright (c) 2018-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,13 @@
 # limitations under the License.
 #=============================================================================
 
-cmake_minimum_required(VERSION 3.12..3.17 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.18...3.18 FATAL_ERROR)
 
-project(CUGRAPH VERSION 0.18.0 LANGUAGES C CXX CUDA)
+project(CUGRAPH VERSION 0.19.0 LANGUAGES C CXX CUDA)
+
+# Write the version header
+include(cmake/Modules/Version.cmake)
+write_version()
 
 ###################################################################################################
 # - build type ------------------------------------------------------------------------------------
@@ -32,6 +36,18 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
     "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
+
+##############################################################################
+# - User Options  ------------------------------------------------------------
+
+option(BUILD_CUGRAPH_MG_TESTS "Build cuGraph multigpu algorithm tests" OFF)
+
+###################################################################################################
+# - user options ------------------------------------------------------------------------------
+
+set(BLAS_LIBRARIES "" CACHE STRING
+    "Location of BLAS library for FAISS build.")
+option(BUILD_STATIC_FAISS "Build the FAISS library for nearest neighbors search on GPU" OFF)
 
 ###################################################################################################
 # - compiler options ------------------------------------------------------------------------------
@@ -90,15 +106,17 @@ message("-- Building for GPU_ARCHS = ${GPU_ARCHS}")
 foreach(arch ${GPU_ARCHS})
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
   set(GUNROCK_GENCODE_SM${arch} "ON")
+  set(FAISS_GPU_ARCHS "${FAISS_GPU_ARCHS} -gencode arch=compute_${arch},code=sm_${arch}")
 endforeach()
 
 list(GET GPU_ARCHS -1 ptx)
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${ptx},code=compute_${ptx}")
+set(FAISS_GPU_ARCHS "${FAISS_GPU_ARCHS} -gencode arch=compute_${ptx},code=compute_${ptx}")
 
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda --expt-relaxed-constexpr")
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Werror=cross-execution-space-call -Wno-deprecated-declarations -Xptxas --disable-warnings")
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -Wall,-Wno-error=sign-compare,-Wno-error=unused-but-set-variable")
-
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xfatbin=-compress-all")
 
 # Option to enable line info in CUDA device compilation to allow introspection when profiling /
 # memchecking
@@ -153,22 +171,23 @@ endif(OpenMP_FOUND)
 
 
 ###################################################################################################
+# - find blas -------------------------------------------------------------------------------------
+
+if(NOT DEFINED BLAS_LIBRARIES)
+  find_package( BLAS REQUIRED )
+else()
+  message(STATUS "Manually setting BLAS to ${BLAS_LIBRARIES}")
+endif()
+
+###################################################################################################
 # - find gtest ------------------------------------------------------------------------------------
 
 if(BUILD_TESTS)
-    include(ConfigureGoogleTest)
-
-    if(GTEST_FOUND)
-        message(STATUS
-            "Google C++ Testing Framework (Google Test) found in ${GTEST_ROOT}")
-    else()
-        message(AUTHOR_WARNING
-            "Google C++ Testing Framework (Google Test) not found: automated tests are disabled.")
-    endif(GTEST_FOUND)
+    find_package(GTest REQUIRED)
 endif(BUILD_TESTS)
 
 ###################################################################################################
-# - RMM -------------------------------------------------------------------------------------------
+# - find RMM --------------------------------------------------------------------------------------
 
 find_path(RMM_INCLUDE "rmm"
     HINTS
@@ -177,6 +196,24 @@ find_path(RMM_INCLUDE "rmm"
     "$ENV{CONDA_PREFIX}/include")
 
 message(STATUS "RMM: RMM_INCLUDE set to ${RMM_INCLUDE}")
+
+###################################################################################################
+# - find NCCL -------------------------------------------------------------------------------------
+
+if(NOT NCCL_PATH)
+    find_package(NCCL REQUIRED)
+else()
+    message("-- Manually set NCCL PATH to ${NCCL_PATH}")
+    set(NCCL_INCLUDE_DIRS ${NCCL_PATH}/include)
+    set(NCCL_LIBRARIES ${NCCL_PATH}/lib/libnccl.so)
+endif(NOT NCCL_PATH)
+
+###################################################################################################
+# - find MPI - only enabled if MG tests are to be built
+
+if(BUILD_CUGRAPH_MG_TESTS)
+  find_package(MPI REQUIRED)
+endif(BUILD_CUGRAPH_MG_TESTS)
 
 ###################################################################################################
 # - Fetch Content ---------------------------------------------------------------------------------
@@ -205,7 +242,7 @@ message("Fetching cuco")
 FetchContent_Declare(
     cuco
     GIT_REPOSITORY https://github.com/NVIDIA/cuCollections.git
-    GIT_TAG        d965ed8dea8f56da8e260a6130dddf3ca351c45f
+    GIT_TAG        2196040f0562a0280292eebef5295d914f615e63
 )
 
 FetchContent_GetProperties(cuco)
@@ -235,26 +272,61 @@ endif()
 set(LIBCUDACXX_INCLUDE_DIR "${libcudacxx_SOURCE_DIR}/include")
 message("set LIBCUDACXX_INCLUDE_DIR to: ${LIBCUDACXX_INCLUDE_DIR}")
 
+# - CUHORNET
+FetchContent_Declare(
+    cuhornet
+    GIT_REPOSITORY    https://github.com/rapidsai/cuhornet.git
+    GIT_TAG           e58d0ecdbc270fc28867d66c965787a62a7a882c
+    GIT_SHALLOW       true
+    SOURCE_SUBDIR     hornet
+)
+
+FetchContent_GetProperties(cuhornet)
+if(NOT cuhornet_POPULATED)
+  message("populating cuhornet")
+  FetchContent_Populate(cuhornet)
+  # We are not using the cuhornet CMake targets, so no need to call `add_subdirectory()`.
+endif()
+set(CUHORNET_INCLUDE_DIR ${cuhornet_SOURCE_DIR} CACHE STRING "Path to cuhornet includes")
+
+# - raft - (header only)
+# Only cloned if RAFT_PATH env variable is not defined
+if(DEFINED ENV{RAFT_PATH})
+  message(STATUS "RAFT_PATH environment variable detected.")
+  message(STATUS "RAFT_DIR set to $ENV{RAFT_PATH}")
+  set(RAFT_DIR "$ENV{RAFT_PATH}")
+
+else(DEFINED ENV{RAFT_PATH})
+  message(STATUS "RAFT_PATH environment variable NOT detected, cloning RAFT")
+
+  FetchContent_Declare(
+    raft
+    GIT_REPOSITORY    https://github.com/rapidsai/raft.git
+    GIT_TAG           f0cd81fb49638eaddc9bf18998cc894f292bc293
+
+    SOURCE_SUBDIR     raft
+  )
+
+  FetchContent_GetProperties(raft)
+  if(NOT raft_POPULATED)
+     message("populating raft")
+     FetchContent_Populate(raft)
+     # We are not using any raft CMake targets, so no need to call `add_subdirectory()`.
+  endif()
+
+  set(RAFT_DIR "${raft_SOURCE_DIR}")
+endif(DEFINED ENV{RAFT_PATH})
 
 ###################################################################################################
 # - External Projects -----------------------------------------------------------------------------
 
 # https://cmake.org/cmake/help/v3.0/module/ExternalProject.html
+
+# FIXME: gunrock is still using ExternalProject instead of
+# FetchContent. Consider migrating to FetchContent soon (this may require
+# updates to the gunrock cmake files to support this).
+
 include(ExternalProject)
-
-# - CUHORNET
-set(CUHORNET_DIR ${CMAKE_CURRENT_BINARY_DIR}/cuhornet CACHE STRING "Path to cuhornet repo")
-set(CUHORNET_INCLUDE_DIR ${CUHORNET_DIR}/src/cuhornet CACHE STRING "Path to cuhornet includes")
-
-
-ExternalProject_Add(cuhornet
-  GIT_REPOSITORY    https://github.com/rapidsai/cuhornet.git
-  GIT_TAG           9cb8e8803852bd895a9c95c0fe778ad6eeefa7ad
-  PREFIX            ${CUHORNET_DIR}
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND     ""
-  INSTALL_COMMAND   ""
-)
 
 # - GUNROCK
 set(GUNROCK_DIR ${CMAKE_CURRENT_BINARY_DIR}/gunrock CACHE STRING "Path to gunrock repo")
@@ -262,7 +334,7 @@ set(GUNROCK_INCLUDE_DIR ${GUNROCK_DIR}/src/gunrock_ext CACHE STRING "Path to gun
 
 ExternalProject_Add(gunrock_ext
   GIT_REPOSITORY    https://github.com/gunrock/gunrock.git
-  GIT_TAG           dev
+  GIT_TAG           v1.2
   PREFIX            ${GUNROCK_DIR}
   CMAKE_ARGS        -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
                     -DGUNROCK_BUILD_SHARED_LIBS=OFF
@@ -280,74 +352,62 @@ ExternalProject_Add(gunrock_ext
 )
 
 add_library(gunrock STATIC IMPORTED)
-
 add_dependencies(gunrock gunrock_ext)
-
 set_property(TARGET gunrock PROPERTY IMPORTED_LOCATION ${GUNROCK_DIR}/src/gunrock_ext-build/lib/libgunrock.a)
 
-# - NCCL
-if(NOT NCCL_PATH)
-    find_package(NCCL REQUIRED)
+# - FAISS
+# FIXME: The commit currently being fetched from faiss is using autotools which
+# is more convenient to build with ExternalProjectAdd.
+# Consider migrating to FetchContent once the tagged commit is changed.
+
+if(BUILD_STATIC_FAISS)
+  set(FAISS_DIR ${CMAKE_CURRENT_BINARY_DIR}/faiss CACHE STRING
+    "Path to FAISS source directory")
+  ExternalProject_Add(faiss
+    GIT_REPOSITORY    https://github.com/facebookresearch/faiss.git
+    GIT_TAG           7c2d2388a492d65fdda934c7e74ae87acaeed066
+    CONFIGURE_COMMAND LIBS=-pthread
+                      CPPFLAGS=-w
+                      LDFLAGS=-L${CMAKE_INSTALL_PREFIX}/lib
+                        cmake -B build .
+                        -DCMAKE_BUILD_TYPE=Release
+                        -DBUILD_TESTING=OFF
+                        -DFAISS_ENABLE_PYTHON=OFF
+                        -DBUILD_SHARED_LIBS=OFF
+                        -DFAISS_ENABLE_GPU=ON
+                        -DCUDAToolkit_ROOT=${CUDA_TOOLKIT_ROOT_DIR}
+                        -DCUDA_ARCHITECTURES=${FAISS_GPU_ARCHS}
+                        -DBLAS_LIBRARIES=${BLAS_LIBRARIES}
+    PREFIX            ${FAISS_DIR}
+    BUILD_COMMAND     make -C build -j${PARALLEL_LEVEL} VERBOSE=1
+    BUILD_BYPRODUCTS  ${FAISS_DIR}/src/faiss/build/faiss/libfaiss.a
+    BUILD_ALWAYS      1
+    INSTALL_COMMAND   ""
+    UPDATE_COMMAND    ""
+    BUILD_IN_SOURCE   1)
+
+  ExternalProject_Get_Property(faiss install_dir)
+  add_library(FAISS::FAISS STATIC IMPORTED)
+  set_property(TARGET FAISS::FAISS PROPERTY
+    IMPORTED_LOCATION ${FAISS_DIR}/src/faiss/build/faiss/libfaiss.a)
+  set(FAISS_INCLUDE_DIRS "${FAISS_DIR}/src/faiss")
 else()
-    message("-- Manually set NCCL PATH to ${NCCL_PATH}")
-    set(NCCL_INCLUDE_DIRS ${NCCL_PATH}/include)
-    set(NCCL_LIBRARIES ${NCCL_PATH}/lib/libnccl.so)
-endif(NOT NCCL_PATH)
-
-# - raft - (header only) -----------------------------------------------------
-
-# Only cloned if RAFT_PATH env variable is not defined
-
-if(DEFINED ENV{RAFT_PATH})
-  message(STATUS "RAFT_PATH environment variable detected.")
-  message(STATUS "RAFT_DIR set to $ENV{RAFT_PATH}")
-  set(RAFT_DIR "$ENV{RAFT_PATH}")
-
-  ExternalProject_Add(raft
-    DOWNLOAD_COMMAND  ""
-    SOURCE_DIR        ${RAFT_DIR}
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND     ""
-    INSTALL_COMMAND   "")
-
-else(DEFINED ENV{RAFT_PATH})
-  message(STATUS "RAFT_PATH environment variable NOT detected, cloning RAFT")
-  set(RAFT_DIR ${CMAKE_CURRENT_BINARY_DIR}/raft CACHE STRING "Path to RAFT repo")
-
-  ExternalProject_Add(raft
-    GIT_REPOSITORY    https://github.com/rapidsai/raft.git
-    GIT_TAG           f75d7b437bf1da3df749108161b8a0505fb6b7b3
-    PREFIX            ${RAFT_DIR}
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND     ""
-    INSTALL_COMMAND   "")
-
-  # Redefining RAFT_DIR so it coincides with the one inferred by env variable.
-  set(RAFT_DIR "${RAFT_DIR}/src/raft/")
-endif(DEFINED ENV{RAFT_PATH})
-
+  set(FAISS_INSTALL_DIR ENV{FAISS_ROOT})
+  find_package(FAISS REQUIRED)
+endif(BUILD_STATIC_FAISS)
 
 ###################################################################################################
 # - library targets -------------------------------------------------------------------------------
-
-# target_link_directories is added in cmake 3.13, and cmake advises to use this instead of
-# link_directoires (we should switch to target_link_directories once 3.13 becomes the minimum
-# required version).
-link_directories(
-     # CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES is an undocumented/unsupported variable containing the
-     # link directories for nvcc.
-    "${CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES}")
 
 add_library(cugraph SHARED
     src/utilities/spmv_1D.cu
     src/utilities/cython.cu
     src/structure/graph.cu
     src/linear_assignment/hungarian.cu
-    src/link_analysis/pagerank.cu
-    src/link_analysis/pagerank_1D.cu
     src/link_analysis/gunrock_hits.cpp
     src/traversal/bfs.cu
     src/traversal/sssp.cu
+    src/traversal/tsp.cu
     src/link_prediction/jaccard.cu
     src/link_prediction/overlap.cu
     src/layout/force_atlas2.cu
@@ -357,16 +417,24 @@ add_library(cugraph SHARED
     src/community/louvain.cu
     src/community/leiden.cu
     src/community/ktruss.cu
-    src/community/ECG.cu
+    src/community/ecg.cu
     src/community/triangles_counting.cu
     src/community/extract_subgraph_by_vertex.cu
+    src/community/egonet.cu
+    src/sampling/random_walks.cu
     src/cores/core_number.cu
     src/traversal/two_hop_neighbors.cu
     src/components/connectivity.cu
     src/centrality/katz_centrality.cu
     src/centrality/betweenness_centrality.cu
+    src/experimental/generate_rmat_edgelist.cu
     src/experimental/graph.cu
     src/experimental/graph_view.cu
+    src/experimental/coarsen_graph.cu
+    src/experimental/renumber_edgelist.cu
+    src/experimental/renumber_utils.cu
+    src/experimental/relabel.cu
+    src/experimental/induced_subgraph.cu
     src/experimental/bfs.cu
     src/experimental/sssp.cu
     src/experimental/pagerank.cu
@@ -374,12 +442,21 @@ add_library(cugraph SHARED
     src/tree/mst.cu
 )
 
+target_link_directories(cugraph
+    PRIVATE
+    # CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES is an undocumented/unsupported variable containing the
+    # link directories for nvcc.
+    "${CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES}")
+
 #
 # NOTE:  This dependency will force the building of cugraph to
 #        wait until after cugunrock is constructed.
 #
 add_dependencies(cugraph gunrock_ext)
-add_dependencies(cugraph raft)
+
+# Per-thread default stream option see https://docs.nvidia.com/cuda/cuda-runtime-api/stream-sync-behavior.html
+# The per-thread default stream does not synchronize with other streams
+target_compile_definitions(cugraph PUBLIC CUDA_API_PER_THREAD_DEFAULT_STREAM)
 
 ###################################################################################################
 # - include paths ---------------------------------------------------------------------------------
@@ -408,7 +485,7 @@ target_include_directories(cugraph
 # - link libraries --------------------------------------------------------------------------------
 
 target_link_libraries(cugraph PRIVATE
-    gunrock cublas cusparse curand cusolver cudart cuda ${NCCL_LIBRARIES})
+  gunrock cublas cusparse curand cusolver cudart cuda FAISS::FAISS ${NCCL_LIBRARIES})
 
 if(OpenMP_CXX_FOUND)
 target_link_libraries(cugraph PRIVATE
@@ -461,16 +538,23 @@ target_link_libraries(cugraph PRIVATE
     ${OpenMP_CXX_LIB_NAMES})
 endif(OpenMP_CXX_FOUND)
 
+# CUDA_ARCHITECTURES=OFF implies cmake will not pass arch flags to the
+# compiler. CUDA_ARCHITECTURES must be set to a non-empty value to prevent cmake
+# warnings about policy CMP0104. With this setting, arch flags must be manually
+# set! ("evaluate_gpu_archs(GPU_ARCHS)" is the current mechanism used in
+# cpp/CMakeLists.txt for setting arch options).  Run "cmake --help-policy
+# CMP0104" for policy details.
+# NOTE: the CUDA_ARCHITECTURES=OFF setting may be removed after migrating to the
+# findcudatoolkit features in cmake 3.17+
+set_target_properties(cugraph PROPERTIES
+    CUDA_ARCHITECTURES OFF)
+
 ###################################################################################################
 # - generate tests --------------------------------------------------------------------------------
 
 if(BUILD_TESTS)
     if(GTEST_FOUND)
-        # target_link_directories is added in cmake 3.13, and cmake advises to use this instead of
-        # link_directoires (we should switch to target_link_directories once 3.13 becomes the
-        # minimum required version).
-        link_directories(${GTEST_LIBRARY_DIR})
-        add_subdirectory(${CMAKE_SOURCE_DIR}/tests)
+        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/tests)
     endif(GTEST_FOUND)
 endif(BUILD_TESTS)
 
@@ -482,6 +566,9 @@ install(TARGETS cugraph LIBRARY
 
 install(DIRECTORY include/
     DESTINATION include/cugraph)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/cugraph/version_config.hpp
+        DESTINATION include/cugraph)
 
 install(DIRECTORY ${RAFT_DIR}/cpp/include/raft/
     DESTINATION include/cugraph/raft)

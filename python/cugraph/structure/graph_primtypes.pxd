@@ -1,4 +1,4 @@
-# Copyright (c) 2019-2020, NVIDIA CORPORATION.
+# Copyright (c) 2019-2021, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -18,12 +18,10 @@
 
 from libcpp cimport bool
 from libcpp.memory cimport unique_ptr
-
+from libcpp.utility cimport pair
+from libcpp.vector cimport vector
+from cugraph.raft.common.handle cimport *
 from rmm._lib.device_buffer cimport device_buffer
-
-cdef extern from "raft/handle.hpp" namespace "raft":
-    cdef cppclass handle_t:
-        handle_t() except +
 
 cdef extern from "graph.hpp" namespace "cugraph":
 
@@ -125,7 +123,6 @@ cdef extern from "graph.hpp" namespace "cugraph":
         GraphCSRView[VT,ET,WT] view()
 
 
-
 cdef extern from "algorithms.hpp" namespace "cugraph":
 
     cdef unique_ptr[GraphCOO[VT, ET, WT]] get_two_hop_neighbors[VT,ET,WT](
@@ -190,54 +187,3 @@ ctypedef fused GraphViewType:
 cdef coo_to_df(GraphCOOPtrType graph)
 cdef csr_to_series(GraphCSRPtrType graph)
 cdef GraphViewType get_graph_view(input_graph, bool weightless=*, GraphViewType* dummy=*)
-
-
-# C++ utilities specifically for Cython
-cdef extern from "utilities/cython.hpp" namespace "cugraph::cython":
-
-    ctypedef enum numberTypeEnum:
-        int32Type "cugraph::cython::numberTypeEnum::int32Type"
-        int64Type "cugraph::cython::numberTypeEnum::int64Type"
-        floatType "cugraph::cython::numberTypeEnum::floatType"
-        doubleType "cugraph::cython::numberTypeEnum::doubleType"
-
-    cdef cppclass graph_container_t:
-       pass
-
-    cdef void populate_graph_container(
-        graph_container_t &graph_container,
-        handle_t &handle,
-        void *src_vertices,
-        void *dst_vertices,
-        void *weights,
-        void *vertex_partition_offsets,
-        numberTypeEnum vertexType,
-        numberTypeEnum edgeType,
-        numberTypeEnum weightType,
-        size_t num_partition_edges,
-        size_t num_global_vertices,
-        size_t num_global_edges,
-        bool sorted_by_degree,
-        bool transposed,
-        bool multi_gpu) except +
-
-    ctypedef enum graphTypeEnum:
-        LegacyCSR "cugraph::cython::graphTypeEnum::LegacyCSR"
-        LegacyCSC "cugraph::cython::graphTypeEnum::LegacyCSC"
-        LegacyCOO "cugraph::cython::graphTypeEnum::LegacyCOO"
-
-    cdef void populate_graph_container_legacy(
-        graph_container_t &graph_container,
-        graphTypeEnum legacyType,
-        const handle_t &handle,
-        void *offsets,
-        void *indices,
-        void *weights,
-        numberTypeEnum offsetType,
-        numberTypeEnum indexType,
-        numberTypeEnum weightType,
-        size_t num_global_vertices,
-        size_t num_global_edges,
-        int *local_vertices,
-        int *local_edges,
-        int *local_offsets) except +

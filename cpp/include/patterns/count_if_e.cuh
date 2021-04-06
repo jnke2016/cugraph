@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@
 #include <experimental/graph_view.hpp>
 #include <matrix_partition_device.cuh>
 #include <patterns/edge_op_utils.cuh>
-#include <utilities/comm_utils.cuh>
 #include <utilities/error.hpp>
+#include <utilities/host_scalar_comm.cuh>
 
 #include <raft/cudart_utils.h>
 #include <rmm/thrust_rmm_allocator.h>
@@ -201,7 +201,7 @@ typename GraphViewType::edge_type count_if_e(
                                          detail::count_if_e_for_all_block_size,
                                          handle.get_device_properties().maxGridSize[0]);
 
-      rmm::device_vector<edge_t> block_counts(update_grid.num_blocks);
+      rmm::device_uvector<edge_t> block_counts(update_grid.num_blocks, handle.get_stream());
 
       detail::for_all_major_for_all_nbr_low_degree<<<update_grid.num_blocks,
                                                      update_grid.block_size,
@@ -210,7 +210,7 @@ typename GraphViewType::edge_type count_if_e(
         matrix_partition,
         adj_matrix_row_value_input_first + row_value_input_offset,
         adj_matrix_col_value_input_first + col_value_input_offset,
-        block_counts.data().get(),
+        block_counts.data(),
         e_op);
 
       // FIXME: we have several options to implement this. With cooperative group support

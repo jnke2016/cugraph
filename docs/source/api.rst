@@ -40,13 +40,6 @@ Betweenness Centrality
     :members:
     :undoc-members:
 
-Edge Betweenness Centrality
----------------------------
-
-.. automodule:: cugraph.centrality.edge_betweenness_centrality
-    :members:
-    :undoc-members:
-
 Katz Centrality
 ---------------
 
@@ -55,8 +48,22 @@ Katz Centrality
     :undoc-members:
 
 
+Katz Centrality (MG)
+--------------------
+
+.. automodule:: cugraph.dask.centrality.katz_centrality
+    :members:
+    :undoc-members:
+
 Community
 =========
+
+EgoNet
+------------------------------------
+
+.. automodule:: cugraph.community.egonet
+	:members:
+	:undoc-members:
 
 Ensemble clustering for graphs (ECG)
 ------------------------------------
@@ -85,6 +92,14 @@ Louvain
 .. automodule:: cugraph.community.louvain
     :members:
     :undoc-members:
+
+Louvain (MG)
+------------
+
+.. automodule:: cugraph.dask.community.louvain
+    :members:
+    :undoc-members:
+
 
 Spectral Clustering
 -------------------
@@ -148,6 +163,17 @@ Force Atlas 2
     :undoc-members:
 
 
+Linear Assignment
+=================
+
+Hungarian
+-------------
+
+.. automodule:: cugraph.linear_assignment.hungarian
+    :members:
+    :undoc-members:
+
+
 Link Analysis
 =============
 
@@ -164,6 +190,13 @@ Pagerank
 .. automodule:: cugraph.link_analysis.pagerank
     :members:
     :undoc-members:
+
+Pagerank (MG)
+---------
+
+.. automodule:: cugraph.dask.link_analysis.pagerank
+    :members: pagerank
+    :undoc-members: 
 
 
 Link Prediction
@@ -202,10 +235,24 @@ Breadth-first-search
     :members:
     :undoc-members:
 
+Breadth-first-search (MG)
+--------------------
+
+.. automodule:: cugraph.dask.traversal.bfs
+    :members:
+    :undoc-members:
+
 Single-source-shortest-path
 ---------------------------
 
 .. automodule:: cugraph.traversal.sssp
+    :members:
+    :undoc-members:
+
+Single-source-shortest-path (MG)
+---------------------------
+
+.. automodule:: cugraph.dask.traversal.sssp
     :members:
     :undoc-members:
 
@@ -227,3 +274,18 @@ Maximum Spanning Tree
     :members:
     :undoc-members:
 
+
+DASK MG Helper functions 
+===========================
+
+.. automodule:: cugraph.comms.comms
+    :members: initialize
+    :undoc-members:
+
+.. automodule:: cugraph.comms.comms
+    :members: destroy
+    :undoc-members:
+
+.. automodule:: cugraph.dask.common.read_utils
+    :members: get_chunksize
+    :undoc-members:

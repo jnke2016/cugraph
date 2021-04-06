@@ -1,4 +1,4 @@
-# Copyright (c) 2019-2020, NVIDIA CORPORATION.:
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.:
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -68,49 +68,36 @@ def calc_betweenness_centrality(
     edgevals=False,
 ):
     """ Generate both cugraph and networkx betweenness centrality
-
     Parameters
     ----------
     graph_file : string
         Path to COO Graph representation in .csv format
-
     directed : bool, optional, default=True
-
     k : int or None, optional, default=None
         int:  Number of sources  to sample  from
         None: All sources are used to compute
-
     normalized : bool
         True: Normalize Betweenness Centrality scores
         False: Scores are left unnormalized
-
     weight : cudf.DataFrame:
         Not supported as of 06/2020
-
     endpoints : bool
         True: Endpoints are included when computing scores
         False: Endpoints are not considered
-
     seed : int or None, optional, default=None
         Seed for random sampling  of the starting point
-
     result_dtype :  numpy.dtype
         Expected type of the result, either np.float32 or np.float64
-
     use_k_full : bool
         When True, if k is None replaces k by the number of sources of the
         Graph
-
     multi_gpu_batch : bool
         When True, enable mg batch after constructing the graph
-
     edgevals: bool
         When True, enable tests with weighted graph, should be ignored
         during computation.
-
     Returns
     -------
-
     sorted_df : cudf.DataFrame
         Contains 'vertex' and  'cu_bc' 'ref_bc' columns,  where 'cu_bc'
         and 'ref_bc' are the two betweenness centrality scores to compare.
@@ -402,7 +389,6 @@ def test_betweenness_centrality_fixed_sample(
     edgevals
 ):
     """Test Betweenness Centrality using a subset
-
     Only k sources are considered for an approximate Betweenness Centrality
     """
     prepare_test()
@@ -441,7 +427,6 @@ def test_betweenness_centrality_weight_except(
     edgevals
 ):
     """Calls betwenness_centrality with weight
-
     As of 05/28/2020, weight is not supported and should raise
     a NotImplementedError
     """

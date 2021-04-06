@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,8 +61,10 @@ class graph_t<vertex_t, edge_t, weight_t, store_transposed, multi_gpu, std::enab
   static constexpr bool is_adj_matrix_transposed = store_transposed;
   static constexpr bool is_multi_gpu             = multi_gpu;
 
+  graph_t(raft::handle_t const &handle) : detail::graph_base_t<vertex_t, edge_t, weight_t>() {}
+
   graph_t(raft::handle_t const &handle,
-          std::vector<edgelist_t<vertex_t, edge_t, weight_t>> const &edge_lists,
+          std::vector<edgelist_t<vertex_t, edge_t, weight_t>> const &edgelists,
           partition_t<vertex_t> const &partition,
           vertex_t number_of_vertices,
           edge_t number_of_edges,
@@ -70,7 +72,7 @@ class graph_t<vertex_t, edge_t, weight_t, store_transposed, multi_gpu, std::enab
           bool sorted_by_global_degree_within_vertex_partition,
           bool do_expensive_check = false);
 
-  graph_view_t<vertex_t, edge_t, weight_t, store_transposed, multi_gpu> view()
+  graph_view_t<vertex_t, edge_t, weight_t, store_transposed, multi_gpu> view() const
   {
     std::vector<edge_t const *> offsets(adj_matrix_partition_offsets_.size(), nullptr);
     std::vector<vertex_t const *> indices(adj_matrix_partition_indices_.size(), nullptr);
@@ -123,8 +125,14 @@ class graph_t<vertex_t, edge_t, weight_t, store_transposed, multi_gpu, std::enab
   static constexpr bool is_adj_matrix_transposed = store_transposed;
   static constexpr bool is_multi_gpu             = multi_gpu;
 
+  graph_t(raft::handle_t const &handle)
+    : detail::graph_base_t<vertex_t, edge_t, weight_t>(),
+      offsets_(0, handle.get_stream()),
+      indices_(0, handle.get_stream()),
+      weights_(0, handle.get_stream()){};
+
   graph_t(raft::handle_t const &handle,
-          edgelist_t<vertex_t, edge_t, weight_t> const &edge_list,
+          edgelist_t<vertex_t, edge_t, weight_t> const &edgelist,
           vertex_t number_of_vertices,
           graph_properties_t properties,
           bool sorted_by_degree,
@@ -132,7 +140,7 @@ class graph_t<vertex_t, edge_t, weight_t, store_transposed, multi_gpu, std::enab
 
   vertex_t get_number_of_local_vertices() const { return this->get_number_of_vertices(); }
 
-  graph_view_t<vertex_t, edge_t, weight_t, store_transposed, multi_gpu> view()
+  graph_view_t<vertex_t, edge_t, weight_t, store_transposed, multi_gpu> view() const
   {
     return graph_view_t<vertex_t, edge_t, weight_t, store_transposed, multi_gpu>(
       *(this->get_handle_ptr()),
@@ -179,6 +187,20 @@ struct invalid_vertex_id : invalid_idx<vertex_t> {
 template <typename edge_t>
 struct invalid_edge_id : invalid_idx<edge_t> {
 };
+
+template <typename vertex_t>
+__host__ __device__ std::enable_if_t<std::is_signed<vertex_t>::value, bool> is_valid_vertex(
+  vertex_t num_vertices, vertex_t v)
+{
+  return (v >= 0) && (v < num_vertices);
+}
+
+template <typename vertex_t>
+__host__ __device__ std::enable_if_t<std::is_unsigned<vertex_t>::value, bool> is_valid_vertex(
+  vertex_t num_vertices, vertex_t v)
+{
+  return v < num_vertices;
+}
 
 }  // namespace experimental
 }  // namespace cugraph

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,84 +15,16 @@
  */
 #pragma once
 
+#include <dendrogram.hpp>
+#include <experimental/graph.hpp>
 #include <experimental/graph_view.hpp>
+
 #include <graph.hpp>
 #include <internals.hpp>
+
 #include <raft/handle.hpp>
 
 namespace cugraph {
-
-/**
- * @brief     Find the PageRank vertex values for a graph.
- *
- * cuGraph computes an approximation of the Pagerank eigenvector using the power method.
- * The number of iterations depends on the properties of the network itself; it increases
- * when the tolerance descreases and/or alpha increases toward the limiting value of 1.
- * The user is free to use default values or to provide inputs for the initial guess,
- * tolerance and maximum number of iterations.
-
- *
- * @throws                           cugraph::logic_error with a custom message when an error
- occurs.
- *
- * @tparam VT                        Type of vertex identifiers. Supported value : int (signed,
- 32-bit)
- * @tparam ET                        Type of edge identifiers. Supported value : int (signed,
- 32-bit)
- * @tparam WT                        Type of edge weights. Supported value : float or double.
- *
- * @param[in] handle                 Library handle (RAFT). If a communicator is set in the handle,
- the multi GPU version will be selected.
- * @param[in] graph                  cuGraph graph descriptor, should contain the connectivity
- information as a transposed adjacency list (CSC). Edge weights are not used for this algorithm.
- * @param[in] alpha                  The damping factor alpha represents the probability to follow
- an outgoing edge, standard value is 0.85. Thus, 1.0-alpha is the probability to “teleport” to a
- random vertex. Alpha should be greater than 0.0 and strictly lower than 1.0.
- *                                   The initial guess must not be the vector of 0s. Any value other
- than 1 or 0 is treated as an invalid value.
- * @param[in] pagerank               Array of size V. Should contain the initial guess if
- has_guess=true. In this case the initial guess cannot be the vector of 0s. Memory is provided and
- owned by the caller.
- * @param[in] personalization_subset_size (optional) Supported on single-GPU, on the roadmap for
- Multi-GPU. The number of vertices for to personalize. Initialized to 0 by default.
- * @param[in] personalization_subset (optional) Supported on single-GPU, on the roadmap for
- Multi-GPU..= Array of size personalization_subset_size containing vertices for running personalized
- pagerank. Initialized to nullptr by default. Memory is provided and owned by the caller.
- * @param[in] personalization_values (optional) Supported on single-GPU, on the roadmap for
- Multi-GPU. Array of size personalization_subset_size containing values associated with
- personalization_subset vertices. Initialized to nullptr by default. Memory is provided and owned by
- the caller.
- * @param[in] tolerance              Supported on single-GPU. Set the tolerance the approximation,
- this parameter should be a small magnitude value.
- *                                   The lower the tolerance the better the approximation. If this
- value is 0.0f, cuGraph will use the default value which is 1.0E-5.
- *                                   Setting too small a tolerance can lead to non-convergence due
- to numerical roundoff. Usually values between 0.01 and 0.00001 are acceptable.
- * @param[in] max_iter               (optional) The maximum number of iterations before an answer is
- returned. This can be used to limit the execution time and do an early exit before the solver
- reaches the convergence tolerance.
- *                                   If this value is lower or equal to 0 cuGraph will use the
- default value, which is 500.
- * @param[in] has_guess              (optional) Supported on single-GPU. This parameter is used to
- notify cuGraph if it should use a user-provided initial guess. False means the user does not have a
- guess, in this case cuGraph will use a uniform vector set to 1/V.
- *                                   If the value is True, cuGraph will read the pagerank parameter
- and use this as an initial guess.
- * @param[out] *pagerank             The PageRank : pagerank[i] is the PageRank of vertex i. Memory
- remains provided and owned by the caller.
- *
- */
-template <typename VT, typename ET, typename WT>
-void pagerank(raft::handle_t const &handle,
-              GraphCSCView<VT, ET, WT> const &graph,
-              WT *pagerank,
-              VT personalization_subset_size = 0,
-              VT *personalization_subset     = nullptr,
-              WT *personalization_values     = nullptr,
-              double alpha                   = 0.85,
-              double tolerance               = 1e-5,
-              int64_t max_iter               = 500,
-              bool has_guess                 = false);
 
 /**
  * @brief     Compute jaccard similarity coefficient for all vertices
@@ -263,6 +195,44 @@ void force_atlas2(GraphCOOView<vertex_t, edge_t, weight_t> &graph,
                   const float gravity                           = 1.0,
                   bool verbose                                  = false,
                   internals::GraphBasedDimRedCallback *callback = nullptr);
+
+/**
+ * @brief Finds an approximate solution to the traveling salesperson problem (TSP).
+ *        cuGraph computes an approximation of the TSP problem using hill climbing
+ *        optimization.
+ *
+ *        The current implementation does not support a weighted graph.
+ *
+ * @throws                                    cugraph::logic_error when an error occurs.
+ * @param[in] handle                          Library handle (RAFT). If a communicator is set in the
+ * handle, the multi GPU version will be selected.
+ * @param[in] vtx_ptr                         Device array containing the vertex identifiers used
+ * to initialize the route.
+ * @param[in] x_pos                           Device array containing starting x-axis positions.
+ * @param[in] y_pos                           Device array containing starting y-axis positions.
+ * @param[in] nodes                           Number of cities.
+ * @param[in] restarts                        Number of starts to try. The more restarts,
+ * the better the solution will be approximated. The number of restarts depends on the problem
+ * size and should be kept low for instances above 2k cities.
+ * @param[in] beam_search                     Specify if the initial solution should use KNN
+ * for an approximation solution.
+ * @param[in] k                               Beam width to use in the search.
+ * @param[in] nstart                          Start from a specific position.
+ * @param[in] verbose                         Logs configuration and iterative improvement.
+ * @param[out] route                          Device array containing the returned route.
+ *
+ */
+float traveling_salesperson(raft::handle_t const &handle,
+                            int const *vtx_ptr,
+                            float const *x_pos,
+                            float const *y_pos,
+                            int nodes,
+                            int restarts,
+                            bool beam_search,
+                            int k,
+                            int nstart,
+                            bool verbose,
+                            int *route);
 
 /**
  * @brief     Compute betweenness centrality for a graph
@@ -646,7 +616,7 @@ weight_t hungarian(raft::handle_t const &handle,
  *
  * @throws     cugraph::logic_error when an error occurs.
  *
- * @tparam     graph_t               Type of graph
+ * @tparam     graph_view_t          Type of graph
  *
  * @param[in]  handle                Library handle (RAFT). If a communicator is set in the handle,
  * @param[in]  graph                 input graph object (CSR)
@@ -663,13 +633,74 @@ weight_t hungarian(raft::handle_t const &handle,
  *                                     2) modularity of the returned clustering
  *
  */
-template <typename graph_t>
-std::pair<size_t, typename graph_t::weight_type> louvain(
+template <typename graph_view_t>
+std::pair<size_t, typename graph_view_t::weight_type> louvain(
   raft::handle_t const &handle,
-  graph_t const &graph,
-  typename graph_t::vertex_type *clustering,
-  size_t max_level                         = 100,
-  typename graph_t::weight_type resolution = typename graph_t::weight_type{1});
+  graph_view_t const &graph_view,
+  typename graph_view_t::vertex_type *clustering,
+  size_t max_level                              = 100,
+  typename graph_view_t::weight_type resolution = typename graph_view_t::weight_type{1});
+
+/**
+ * @brief      Louvain implementation, returning dendrogram
+ *
+ * Compute a clustering of the graph by maximizing modularity
+ *
+ * Computed using the Louvain method described in:
+ *
+ *    VD Blondel, J-L Guillaume, R Lambiotte and E Lefebvre: Fast unfolding of
+ *    community hierarchies in large networks, J Stat Mech P10008 (2008),
+ *    http://arxiv.org/abs/0803.0476
+ *
+ * @throws     cugraph::logic_error when an error occurs.
+ *
+ * @tparam     graph_view_t          Type of graph
+ *
+ * @param[in]  handle                Library handle (RAFT)
+ * @param[in]  graph_view            Input graph view object (CSR)
+ * @param[in]  max_level             (optional) maximum number of levels to run (default 100)
+ * @param[in]  resolution            (optional) The value of the resolution parameter to use.
+ *                                   Called gamma in the modularity formula, this changes the size
+ *                                   of the communities.  Higher resolutions lead to more smaller
+ *                                   communities, lower resolutions lead to fewer larger
+ *                                   communities. (default 1)
+ *
+ * @return                           a pair containing:
+ *                                     1) unique pointer to dendrogram
+ *                                     2) modularity of the returned clustering
+ *
+ */
+template <typename graph_view_t>
+std::pair<std::unique_ptr<Dendrogram<typename graph_view_t::vertex_type>>,
+          typename graph_view_t::weight_type>
+louvain(raft::handle_t const &handle,
+        graph_view_t const &graph_view,
+        size_t max_level                              = 100,
+        typename graph_view_t::weight_type resolution = typename graph_view_t::weight_type{1});
+
+/**
+ * @brief      Flatten a Dendrogram at a particular level
+ *
+ * A Dendrogram represents a hierarchical clustering/partitioning of
+ * a graph.  This function will flatten the hierarchical clustering into
+ * a label for each vertex representing the final cluster/partition to
+ * which it is assigned
+ *
+ * @throws     cugraph::logic_error when an error occurs.
+ *
+ * @tparam     graph_view_t          Type of graph
+ *
+ * @param[in]  handle                Library handle (RAFT). If a communicator is set in the handle,
+ * @param[in]  graph                 input graph object
+ * @param[in]  dendrogram            input dendrogram object
+ * @param[out] clustering            Pointer to device array where the clustering should be stored
+ *
+ */
+template <typename graph_view_t>
+void flatten_dendrogram(raft::handle_t const &handle,
+                        graph_view_t const &graph_view,
+                        Dendrogram<typename graph_view_t::vertex_type> const &dendrogram,
+                        typename graph_view_t::vertex_type *clustering);
 
 /**
  * @brief      Leiden implementation
@@ -815,6 +846,7 @@ template <typename VT, typename ET, typename WT>
 std::unique_ptr<GraphCOO<VT, ET, WT>> extract_subgraph_vertex(GraphCOOView<VT, ET, WT> const &graph,
                                                               VT const *vertices,
                                                               VT num_vertices);
+}  // namespace subgraph
 
 /**
  * @brief     Wrapper function for Nvgraph balanced cut clustering
@@ -837,7 +869,6 @@ std::unique_ptr<GraphCOO<VT, ET, WT>> extract_subgraph_vertex(GraphCOOView<VT, E
  * @param[out] clustering            Pointer to device memory where the resulting clustering will
  * be stored
  */
-}  // namespace subgraph
 
 namespace ext_raft {
 template <typename VT, typename ET, typename WT>
@@ -1134,9 +1165,9 @@ void sssp(raft::handle_t const &handle,
 template <typename vertex_t, typename edge_t, typename weight_t, typename result_t, bool multi_gpu>
 void pagerank(raft::handle_t const &handle,
               graph_view_t<vertex_t, edge_t, weight_t, true, multi_gpu> const &graph_view,
-              weight_t *adj_matrix_row_out_weight_sums,
-              vertex_t *personalization_vertices,
-              result_t *personalization_values,
+              weight_t const *adj_matrix_row_out_weight_sums,
+              vertex_t const *personalization_vertices,
+              result_t const *personalization_values,
               vertex_t personalization_vector_size,
               result_t *pageranks,
               result_t alpha,
@@ -1182,7 +1213,7 @@ void pagerank(raft::handle_t const &handle,
 template <typename vertex_t, typename edge_t, typename weight_t, typename result_t, bool multi_gpu>
 void katz_centrality(raft::handle_t const &handle,
                      graph_view_t<vertex_t, edge_t, weight_t, true, multi_gpu> const &graph_view,
-                     result_t *betas,
+                     result_t const *betas,
                      result_t *katz_centralities,
                      result_t alpha,
                      result_t beta,
@@ -1191,6 +1222,63 @@ void katz_centrality(raft::handle_t const &handle,
                      bool has_initial_guess  = false,
                      bool normalize          = false,
                      bool do_expensive_check = false);
+/**
+ * @brief returns induced EgoNet subgraph(s) of neighbors centered at nodes in source_vertex within
+ * a given radius.
+ *
+ * @tparam vertex_t Type of vertex identifiers. Needs to be an integral type.
+ * @tparam edge_t Type of edge identifiers. Needs to be an integral type.
+ * @tparam weight_t Type of edge weights. Needs to be a floating point type.
+ * @tparam multi_gpu Flag indicating whether template instantiation should target single-GPU (false)
+ * or multi-GPU (true).
+ * @param handle RAFT handle object to encapsulate resources (e.g. CUDA stream, communicator, and
+ * handles to various CUDA libraries) to run graph algorithms. Must have at least one worker stream.
+ * @param graph_view Graph view object of, we extract induced egonet subgraphs from @p graph_view.
+ * @param source_vertex Pointer to egonet center vertices (size == @p n_subgraphs).
+ * @param n_subgraphs Number of induced EgoNet subgraphs to extract (ie. number of elements in @p
+ * source_vertex).
+ * @param radius  Include all neighbors of distance <= radius from @p source_vertex.
+ * @return std::tuple<rmm::device_uvector<vertex_t>, rmm::device_uvector<vertex_t>,
+ * rmm::device_uvector<weight_t>, rmm::device_uvector<size_t>> Quadraplet of edge source vertices,
+ * edge destination vertices, edge weights, and edge offsets for each induced EgoNet subgraph.
+ */
+template <typename vertex_t, typename edge_t, typename weight_t, bool multi_gpu>
+std::tuple<rmm::device_uvector<vertex_t>,
+           rmm::device_uvector<vertex_t>,
+           rmm::device_uvector<weight_t>,
+           rmm::device_uvector<size_t>>
+extract_ego(raft::handle_t const &handle,
+            graph_view_t<vertex_t, edge_t, weight_t, false, multi_gpu> const &graph_view,
+            vertex_t *source_vertex,
+            vertex_t n_subgraphs,
+            vertex_t radius);
 
+/**
+ * @brief returns random walks (RW) from starting sources, where each path is of given maximum
+ * length. Uniform distribution is assumed for the random engine.
+ *
+ * @tparam graph_t Type of graph/view (typically, graph_view_t).
+ * @tparam index_t Type used to store indexing and sizes.
+ * @param handle RAFT handle object to encapsulate resources (e.g. CUDA stream, communicator, and
+ * handles to various CUDA libraries) to run graph algorithms.
+ * @param graph Graph (view )object to generate RW on.
+ * @param ptr_d_start Device pointer to set of starting vertex indices for the RW.
+ * @param num_paths = number(paths).
+ * @param max_depth maximum length of RWs.
+ * @return std::tuple<device_vec_t<vertex_t>, device_vec_t<weight_t>,
+ * device_vec_t<index_t>> Triplet of coalesced RW paths, with corresponding edge weights for
+ * each, and corresponding path sizes. This is meant to minimize the number of DF's to be passed to
+ * the Python layer. The meaning of "coalesced" here is that a 2D array of paths of different sizes
+ * is represented as a 1D array.
+ */
+template <typename graph_t, typename index_t>
+std::tuple<rmm::device_uvector<typename graph_t::vertex_type>,
+           rmm::device_uvector<typename graph_t::weight_type>,
+           rmm::device_uvector<index_t>>
+random_walks(raft::handle_t const &handle,
+             graph_t const &graph,
+             typename graph_t::vertex_type const *ptr_d_start,
+             index_t num_paths,
+             index_t max_depth);
 }  // namespace experimental
 }  // namespace cugraph

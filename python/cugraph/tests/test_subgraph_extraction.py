@@ -1,4 +1,4 @@
-# Copyright (c) 2019-2020, NVIDIA CORPORATION.
+# Copyright (c) 2019-2021, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -19,6 +19,7 @@ import pytest
 import cudf
 import cugraph
 from cugraph.tests import utils
+
 
 # Temporarily suppress warnings till networkX fixes deprecation warnings
 # (Using or importing the ABCs from 'collections' instead of from
@@ -70,7 +71,6 @@ def nx_call(M, verts, directed=True):
     return nx.subgraph(G, verts)
 
 
-# Test all combinations of default/managed and pooled/non-pooled allocation
 @pytest.mark.parametrize("graph_file", utils.DATASETS)
 def test_subgraph_extraction_DiGraph(graph_file):
     gc.collect()
@@ -83,9 +83,6 @@ def test_subgraph_extraction_DiGraph(graph_file):
     cu_sg = cugraph_call(M, verts)
     nx_sg = nx_call(M, verts)
     assert compare_edges(cu_sg, nx_sg)
-
-
-# Test all combinations of default/managed and pooled/non-pooled allocation
 
 
 @pytest.mark.parametrize("graph_file", utils.DATASETS)
@@ -123,10 +120,9 @@ def test_subgraph_extraction_Graph_nx(graph_file):
         )
 
     nx_sub = nx.subgraph(G, verts)
-    nx_df = nx.to_pandas_edgelist(nx_sub).to_dict()
 
     cu_verts = cudf.Series(verts)
     cu_sub = cugraph.subgraph(G, cu_verts)
-    cu_df = nx.to_pandas_edgelist(cu_sub).to_dict()
 
-    assert nx_df == cu_df
+    for (u, v) in cu_sub.edges():
+        assert nx_sub.has_edge(u, v)

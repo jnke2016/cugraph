@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ namespace detail {
 template <typename GraphViewType, typename result_t>
 void katz_centrality(raft::handle_t const &handle,
                      GraphViewType const &pull_graph_view,
-                     result_t *betas,
+                     result_t const *betas,
                      result_t *katz_centralities,
                      result_t alpha,
                      result_t beta,  // relevant only if betas == nullptr
@@ -166,8 +166,6 @@ void katz_centrality(raft::handle_t const &handle,
                       katz_centralities,
                       [l2_norm] __device__(auto val) { return val / l2_norm; });
   }
-
-  return;
 }
 
 }  // namespace detail
@@ -175,7 +173,7 @@ void katz_centrality(raft::handle_t const &handle,
 template <typename vertex_t, typename edge_t, typename weight_t, typename result_t, bool multi_gpu>
 void katz_centrality(raft::handle_t const &handle,
                      graph_view_t<vertex_t, edge_t, weight_t, true, multi_gpu> const &graph_view,
-                     result_t *betas,
+                     result_t const *betas,
                      result_t *katz_centralities,
                      result_t alpha,
                      result_t beta,  // relevant only if beta == nullptr
@@ -202,7 +200,7 @@ void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int32_t, int32_t, float, true, true> const &graph_view,
-                              float *betas,
+                              float const *betas,
                               float *katz_centralities,
                               float alpha,
                               float beta,
@@ -214,7 +212,7 @@ template void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int32_t, int32_t, double, true, true> const &graph_view,
-                              double *betas,
+                              double const *betas,
                               double *katz_centralities,
                               double alpha,
                               double beta,
@@ -226,7 +224,7 @@ template void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int32_t, int64_t, float, true, true> const &graph_view,
-                              float *betas,
+                              float const *betas,
                               float *katz_centralities,
                               float alpha,
                               float beta,
@@ -238,7 +236,7 @@ template void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int32_t, int64_t, double, true, true> const &graph_view,
-                              double *betas,
+                              double const *betas,
                               double *katz_centralities,
                               double alpha,
                               double beta,
@@ -250,7 +248,7 @@ template void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int64_t, int64_t, float, true, true> const &graph_view,
-                              float *betas,
+                              float const *betas,
                               float *katz_centralities,
                               float alpha,
                               float beta,
@@ -262,7 +260,7 @@ template void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int64_t, int64_t, double, true, true> const &graph_view,
-                              double *betas,
+                              double const *betas,
                               double *katz_centralities,
                               double alpha,
                               double beta,
@@ -274,7 +272,7 @@ template void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int32_t, int32_t, float, true, false> const &graph_view,
-                              float *betas,
+                              float const *betas,
                               float *katz_centralities,
                               float alpha,
                               float beta,
@@ -286,7 +284,7 @@ template void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int32_t, int32_t, double, true, false> const &graph_view,
-                              double *betas,
+                              double const *betas,
                               double *katz_centralities,
                               double alpha,
                               double beta,
@@ -298,7 +296,7 @@ template void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int32_t, int64_t, float, true, false> const &graph_view,
-                              float *betas,
+                              float const *betas,
                               float *katz_centralities,
                               float alpha,
                               float beta,
@@ -310,7 +308,7 @@ template void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int32_t, int64_t, double, true, false> const &graph_view,
-                              double *betas,
+                              double const *betas,
                               double *katz_centralities,
                               double alpha,
                               double beta,
@@ -322,7 +320,7 @@ template void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int64_t, int64_t, float, true, false> const &graph_view,
-                              float *betas,
+                              float const *betas,
                               float *katz_centralities,
                               float alpha,
                               float beta,
@@ -334,7 +332,7 @@ template void katz_centrality(raft::handle_t const &handle,
 
 template void katz_centrality(raft::handle_t const &handle,
                               graph_view_t<int64_t, int64_t, double, true, false> const &graph_view,
-                              double *betas,
+                              double const *betas,
                               double *katz_centralities,
                               double alpha,
                               double beta,

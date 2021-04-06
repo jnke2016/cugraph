@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,8 +21,7 @@ from dask_cudf.core import Series as daskSeries
 
 import cugraph.comms.comms as Comms
 from cugraph.raft.dask.common.utils import get_client
-from cugraph.dask.common.part_utils import (_extract_partitions,
-                                            load_balance_func)
+from cugraph.dask.common.part_utils import _extract_partitions
 from dask.distributed import default_client
 from toolz import first
 from functools import reduce
@@ -174,6 +173,14 @@ class DistributedDataHandler:
         self.max_vertex_id = max_vid
 
 
+def _get_local_data(df, by):
+    df = df[0]
+    num_local_edges = len(df)
+    local_by_max = df[by].iloc[-1]
+    local_max = df[['src', 'dst']].max().max()
+    return num_local_edges, local_by_max, local_max
+
+
 """ Internal methods, API subject to change """
 
 
@@ -198,28 +205,6 @@ def _get_rows(objs, multiple):
     return total, reduce(lambda a, b: a + b, total)
 
 
-def _get_local_data(df, by):
-    df = df[0]
-    num_local_edges = len(df)
-    local_by_max = df[by].iloc[-1]
-    local_max = df[['src', 'dst']].max().max()
-    return num_local_edges, local_by_max, local_max
-
-
-def get_local_data(input_graph, by, load_balance=True):
-    input_graph.compute_renumber_edge_list(transposed=(by == 'dst'))
-    _ddf = input_graph.edgelist.edgelist_df
-    ddf = _ddf.sort_values(by=by, ignore_index=True)
-
-    if load_balance:
-        ddf = load_balance_func(ddf, by=by)
-
-    comms = Comms.get_comms()
-    data = DistributedDataHandler.create(data=ddf)
-    data.calculate_local_data(comms, by)
-    return data
-
-
 def get_mg_batch_data(dask_cudf_data):
     data = DistributedDataHandler.create(data=dask_cudf_data)
     return data
@@ -232,3 +217,15 @@ def get_distributed_data(input_ddf):
     if data.worker_info is None and comms is not None:
         data.calculate_worker_and_rank_info(comms)
     return data
+
+
+def get_vertex_partition_offsets(input_graph):
+    import cudf
+    renumber_vertex_count = input_graph.renumber_map.implementation.ddf.\
+        map_partitions(len).compute()
+    renumber_vertex_cumsum = renumber_vertex_count.cumsum()
+    vertex_dtype = input_graph.edgelist.edgelist_df['src'].dtype
+    vertex_partition_offsets = cudf.Series([0], dtype=vertex_dtype)
+    vertex_partition_offsets = vertex_partition_offsets.append(cudf.Series(
+        renumber_vertex_cumsum, dtype=vertex_dtype))
+    return vertex_partition_offsets
