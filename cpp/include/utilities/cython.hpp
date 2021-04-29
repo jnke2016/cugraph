@@ -492,7 +492,7 @@ std::unique_ptr<cy_multi_edgelists_t> call_egonet(raft::handle_t const& handle,
 //
 template <typename vertex_t, typename edge_t>
 std::enable_if_t<cugraph::experimental::is_vertex_edge_combo<vertex_t, edge_t>::value,
-                 std::unique_ptr<random_walk_ret_t>>
+                 std::unique_ptr<random_walk_coo_t>>
 call_random_walks(raft::handle_t const& handle,
                   graph_container_t const& graph_container,
                   vertex_t const* ptr_start_set,

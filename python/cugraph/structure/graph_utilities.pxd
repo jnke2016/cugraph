@@ -92,6 +92,15 @@ cdef extern from "utilities/cython.hpp" namespace "cugraph::cython":
         unique_ptr[device_buffer] d_coalesced_v_
         unique_ptr[device_buffer] d_coalesced_w_
         unique_ptr[device_buffer] d_sizes_
+    
+    cdef cppclass random_walk_coo_t:
+        size_t num_edges_
+        size_t num_offsets_
+        unique_ptr[device_buffer] d_src_
+        unique_ptr[device_buffer] d_dst_
+        unique_ptr[device_buffer] d_weights_
+        unique_ptr[device_buffer] d_offsets_
+
 
 cdef extern from "<utility>" namespace "std" nogil:
     cdef device_buffer move(device_buffer)

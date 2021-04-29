@@ -66,30 +66,11 @@ def random_walks(
 
     if G.renumbered is True:
         start_vertices = G.lookup_internal_vertex_id(start_vertices)
-    vertex_set, edge_set, sizes = random_walks_wrapper.random_walks(
+    df, offset = random_walks_wrapper.random_walks(
         G, start_vertices, max_depth)
-
+ 
     if G.renumbered:
-        df_ = cudf.DataFrame()
-        df_['vertex_set'] = vertex_set
-        df_ = G.unrenumber(df_, 'vertex_set', preserve_order=True)
-        vertex_set = cudf.Series(df_['vertex_set'])
+        df = G.unrenumber(df, "src", preserve_order=True)
+        df = G.unrenumber(df, "dst", preserve_order=True)
 
-    edge_list = defaultdict(list)
-    next_path_idx = 0
-    offsets = [0]
-
-    df = cudf.DataFrame()
-    for s in sizes.values_host:
-        for i in range(next_path_idx, s+next_path_idx-1):
-            edge_list['src'].append(vertex_set.values_host[i])
-            edge_list['dst'].append(vertex_set.values_host[i+1])
-        next_path_idx += s
-        df = df.append(edge_list, ignore_index=True)
-        offsets.append(df.index[-1]+1)
-        edge_list['src'].clear()
-        edge_list['dst'].clear()
-    df['weight'] = edge_set
-    offsets = cudf.Series(offsets)
-
-    return df, offsets
+    return df, offset

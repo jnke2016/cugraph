@@ -11,6 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from cugraph.sampling.random_walks cimport call_random_walks
+#from cugraph.sampling.random_walks cimport 
 #from cugraph.structure.graph_primtypes cimport *
 from cugraph.structure.graph_utilities cimport *
 from libcpp cimport bool
@@ -46,7 +47,7 @@ def random_walks(input_graph, start_vertices, max_depth):
     
     if num_edges > (2**31 - 1):
         edge_t = np.dtype("int64")
-    cdef unique_ptr[random_walk_ret_t] rw_ret_ptr 
+    cdef unique_ptr[random_walk_coo_t] rw_ret_ptr  #change this to rw_coo_ptr
     
     cdef uintptr_t c_src_vertices = src.__cuda_array_interface__['data'][0]
     cdef uintptr_t c_dst_vertices = dst.__cuda_array_interface__['data'][0]
@@ -99,7 +100,7 @@ def random_walks(input_graph, start_vertices, max_depth):
                                                            <long> num_paths,
                                                            <long> max_depth))
 
-    
+    """
     rw_ret= move(rw_ret_ptr.get()[0])
     vertex_set = DeviceBuffer.c_from_unique_ptr(move(rw_ret.d_coalesced_v_))
     edge_set = DeviceBuffer.c_from_unique_ptr(move(rw_ret.d_coalesced_w_))
@@ -111,6 +112,29 @@ def random_walks(input_graph, start_vertices, max_depth):
     set_vertex = cudf.Series(data=vertex_set, dtype=vertex_t)
     set_edge = cudf.Series(data=edge_set, dtype=weight_t)
     set_sizes = cudf.Series(data=sizes, dtype=edge_t)
+    """
 
-    return set_vertex, set_edge, set_sizes
+    rw_ret= move(rw_ret_ptr.get()[0])
+    #vertex_set = DeviceBuffer.c_from_unique_ptr(move(rw_ret.d_coalesced_v_))
+    #edge_set = DeviceBuffer.c_from_unique_ptr(move(rw_ret.d_coalesced_w_))
+    #sizes = DeviceBuffer.c_from_unique_ptr(move(rw_ret.d_sizes_))
+    src = DeviceBuffer.c_from_unique_ptr(move(rw_ret.d_src_))
+    dst = DeviceBuffer.c_from_unique_ptr(move(rw_ret.d_dst_))
+    weight = DeviceBuffer.c_from_unique_ptr(move(rw_ret.d_weights_))
+    offset = DeviceBuffer.c_from_unique_ptr(move(rw_ret.d_offsets_))
+    src = Buffer(src)
+    dst = Buffer(dst)
+    weigth = Buffer(weight)
+    offset = Buffer(offset)
+
+    src = cudf.Series(data=src, dtype=vertex_t)
+    dst = cudf.Series(data=dst, dtype=vertex_t)
+    offset = cudf.Series(data=offset, dtype=vertex_t)
+    weight = cudf.Series(data=weight, dtype=weight_t)
+    df = cudf.DataFrame()
+    df['src'] = src
+    df['dst'] = dst
+    df['weight'] = weight
+  
+    return df, offset
     
