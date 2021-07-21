@@ -19,7 +19,7 @@ include(FetchContent)
 FetchContent_Declare(
   rapids-cmake
   GIT_REPOSITORY https://github.com/rapidsai/rapids-cmake.git
-  GIT_TAG        origin/branch-21.06
+  GIT_TAG        origin/branch-21.08
   )
 FetchContent_MakeAvailable(rapids-cmake)
 
@@ -31,7 +31,7 @@ include(rapids-find)
 
 rapids_cuda_init_architectures(CUGRAPH)
 
-project(CUGRAPH VERSION 21.06.00 LANGUAGES C CXX CUDA)
+project(CUGRAPH VERSION 21.08.00 LANGUAGES C CXX CUDA)
 
 # Remove the following archs from CMAKE_CUDA_ARCHITECTURES that
 # cuhornet currently doesn't support
@@ -169,7 +169,6 @@ add_library(cugraph SHARED
     src/link_prediction/jaccard.cu
     src/link_prediction/overlap.cu
     src/layout/force_atlas2.cu
-    src/converters/renumber.cu
     src/converters/COOtoCSR.cu
     src/community/spectral_clustering.cu
     src/community/louvain.cu
@@ -205,6 +204,9 @@ add_library(cugraph SHARED
     src/components/weakly_connected_components.cu
     src/structure/create_graph_from_edgelist.cu
     src/utilities/host_barrier.cpp
+    src/visitors/graph_envelope.cpp
+    src/visitors/visitors_factory.cpp
+    src/visitors/bfs_visitor.cpp
 )
 
 set_target_properties(cugraph
@@ -337,8 +339,8 @@ install(TARGETS cugraph
         DESTINATION lib
         EXPORT cugraph-exports)
 
-install(DIRECTORY include/
-        DESTINATION include)
+install(DIRECTORY include/cugraph/
+        DESTINATION include/cugraph)
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/cugraph/version_config.hpp
         DESTINATION include/cugraph)
