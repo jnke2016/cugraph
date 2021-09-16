@@ -16,10 +16,31 @@ from cugraph.structure.graph_classes import Graph
 from cugraph.utilities import check_nx_graph
 from cugraph.utilities import cugraph_to_nx
 
+from numba import cuda
+
+
+# FIXME: special case for ktruss on CUDA 11.4: an 11.4 bug causes ktruss to
+# crash in that environment. Allow ktruss to import on non-11.4 systems, but
+# raise an exception if ktruss is directly imported on 11.4.
+def _ensure_compatible_cuda_version():
+    try:
+        cuda_version = cuda.runtime.get_version()
+    except cuda.cudadrv.runtime.CudaRuntimeAPIError:
+        cuda_version = "n/a"
+
+    unsupported_cuda_version = (11, 4)
+
+    if cuda_version == unsupported_cuda_version:
+        ver_string = ".".join([str(n) for n in unsupported_cuda_version])
+        raise NotImplementedError("k_truss is not currently supported in CUDA"
+                                  f" {ver_string} environments.")
+
 
 def k_truss(G, k):
     """
     Returns the K-Truss subgraph of a graph for a specific k.
+
+    NOTE: this function is currently not available on CUDA 11.4 systems.
 
     The k-truss of a graph is a subgraph where each edge is part of at least
     (k−2) triangles. K-trusses are used for finding tighlty knit groups of
@@ -44,6 +65,8 @@ def k_truss(G, k):
         The networkx graph will NOT have all attributes copied over
     """
 
+    _ensure_compatible_cuda_version()
+
     G, isNx = check_nx_graph(G)
 
     if isNx is True:
@@ -59,6 +82,8 @@ def k_truss(G, k):
 def ktruss_subgraph(G, k, use_weights=True):
     """
     Returns the K-Truss subgraph of a graph for a specific k.
+
+    NOTE: this function is currently not available on CUDA 11.4 systems.
 
     The k-truss of a graph is a subgraph where each edge is part of at least
     (k−2) triangles. K-trusses are used for finding tighlty knit groups of
@@ -116,6 +141,8 @@ def ktruss_subgraph(G, k, use_weights=True):
     >>> G.from_cudf_edgelist(gdf, source='0', destination='1')
     >>> k_subgraph = cugraph.ktruss_subgraph(G, 3)
     """
+
+    _ensure_compatible_cuda_version()
 
     KTrussSubgraph = Graph()
     if type(G) is not Graph:

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2014-2020, Texas State University. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +18,7 @@
 #pragma once
 
 #define tilesize 128
-#define kswaps 4
+#define kswaps   4
 
 #include <sys/time.h>
 #include <string>
@@ -26,7 +27,7 @@
 namespace cugraph {
 namespace detail {
 
-constexpr float euclidean_dist(float *px, float *py, int a, int b)
+constexpr float euclidean_dist(float* px, float* py, int a, int b)
 {
   return sqrtf((px[a] - px[b]) * (px[a] - px[b]) + (py[a] - py[b]) * (py[a] - py[b]));
 }
@@ -48,7 +49,8 @@ int best_thread_count(int nodes, int max_threads, int sm_count, int warp_size)
     blocks = (16384 * 2) / smem;
     if (blocks > sm_count) blocks = sm_count;
     thr = (threads + warp_size - 1) / warp_size * warp_size;
-    while (blocks * thr > max_threads_sm) blocks--;
+    while (blocks * thr > max_threads_sm)
+      blocks--;
     perf = threads * blocks;
     if (perf > best) {
       best = perf;
