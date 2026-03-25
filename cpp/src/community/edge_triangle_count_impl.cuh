@@ -10,6 +10,7 @@
 #include "prims/fill_edge_property.cuh"
 #include "prims/make_initialized_edge_property.cuh"
 #include "prims/per_v_pair_dst_nbr_intersection.cuh"
+#include "prims/per_v_pair_dst_nbr_intersection_for_each.cuh"
 #include "prims/transform_e.cuh"
 
 #include <cugraph/graph_functions.hpp>
@@ -116,6 +117,21 @@ struct extract_q_r {
   }
 };
 
+template <typename vertex_t, typename edge_t>
+struct increment_triangle_counts_t {
+  edge_t* counts;
+  __device__ void operator()(vertex_t, vertex_t, vertex_t,
+                             edge_t pq_offset, edge_t pr_offset, edge_t qr_offset) const
+  {
+    cuda::atomic_ref<edge_t, cuda::thread_scope_device> ref_pq(counts[pq_offset]);
+    ref_pq.fetch_add(edge_t{1}, cuda::std::memory_order_relaxed);
+    cuda::atomic_ref<edge_t, cuda::thread_scope_device> ref_pr(counts[pr_offset]);
+    ref_pr.fetch_add(edge_t{1}, cuda::std::memory_order_relaxed);
+    cuda::atomic_ref<edge_t, cuda::thread_scope_device> ref_qr(counts[qr_offset]);
+    ref_qr.fetch_add(edge_t{1}, cuda::std::memory_order_relaxed);
+  }
+};
+
 template <typename vertex_t, typename edge_t, bool store_transposed, bool multi_gpu>
 edge_property_t<edge_t, edge_t> edge_triangle_count_impl(
   raft::handle_t const& handle,
@@ -147,6 +163,31 @@ edge_property_t<edge_t, edge_t> edge_triangle_count_impl(
                 self_loop_edge_mask->mutable_view());
 
     cur_graph_view.attach_edge_mask(self_loop_edge_mask->view());
+  }
+
+  if constexpr (!multi_gpu) {
+    cugraph::edge_property_t<edge_t, edge_t> counts(handle, cur_graph_view);
+    {
+      auto unmasked = cur_graph_view;
+      if (unmasked.has_edge_mask()) { unmasked.clear_edge_mask(); }
+      // FIXME: We are filling the count of all edges (including non DODG) ones
+      // only for debugging purposes of the inetersection operation. In fact, the
+      // non DODG edges will not be used in the intersection operation..
+      cugraph::fill_edge_property(handle, unmasked, counts.mutable_view(), edge_t{0});
+    }
+    // Note: The edge property internally stores counts in a device array hence
+    // retrieve the raw pointer to that array so that we can directly writes to it
+    // via atomicAdd, bypassing the decompress -> bucket -> transform_e pipeline
+    // which carries overhead
+    edge_t* counts_ptr = counts.mutable_view().value_firsts()[0];
+
+    per_v_pair_dst_nbr_intersection_for_each(
+      handle,
+      cur_graph_view,
+      increment_triangle_counts_t<vertex_t, edge_t>{counts_ptr},
+      do_expensive_check);
+
+    return counts;
   }
 
   rmm::device_uvector<vertex_t> edgelist_srcs(0, handle.get_stream());
